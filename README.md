@@ -15,12 +15,12 @@ protect ISRO satellites, at three forecast horizons: **30–45 min**, **6 hours*
 | 3 | Feature Engineering (Dynamic Lag, lag/rolling/delta features) | ✅ Complete |
 | 4 | Multi-Horizon Dataset Builder (3 chronological train/val/test splits) | ✅ Complete |
 | 5 | Model Training (XGBoost + LSTM per horizon) | ✅ Complete |
-| 6 | Weighted Ensemble (α-blend of XGBoost + LSTM) | ⬜ Not started |
+| 6 | Weighted Ensemble (α-blend of XGBoost + LSTM) | ✅ Complete |
 | 7 | Validation against GRASP (Indian-longitude ground truth) | ⬜ Not started |
 | 8 | Streamlit Dashboard | ⬜ Not started |
 
-Phases 1–5 are implemented, tested against real downloaded data where possible, and ready to
-run on a full multi-year dataset. Phases 6–8 are next.
+Phases 1–6 are implemented, tested against real downloaded data where possible, and ready to
+run on a full multi-year dataset. Phases 7–8 are next.
 
 ---
 
@@ -45,7 +45,8 @@ GOES CDF  +  Wind CDF  +  GRASP ZIP
   Phase 5  XGBoost + LSTM Training   run_phase5_training.py
         │  → models/xgb_horizon_{A,B,C}.pkl, models/lstm_horizon_{A,B,C}.h5
         ▼
-  Phase 6  Weighted Ensemble         (not yet built)
+  Phase 6  Weighted Ensemble         run_phase6_ensemble.py
+        │  → models/ensemble_weights.json
         ▼
   Phase 7  Validation vs GRASP       (not yet built)
         ▼
@@ -93,10 +94,12 @@ python run_phase2_preprocessing.py
 python run_phase3_features.py
 python run_phase4_dataset_builder.py
 python run_phase5_training.py                    # trains XGBoost + LSTM, all 3 horizons
+python run_phase6_ensemble.py                    # grid-searches alpha per horizon
 
 # Or run pieces individually while iterating:
 python run_phase5_training.py --xgb-only --horizon A
 python run_phase5_training.py --lstm-only --epochs 30 --sequence-length 288
+python run_phase6_ensemble.py --horizon A
 ```
 
 XGBoost trains fine on a laptop CPU (~10–30 min for all three horizons). LSTM should be
@@ -135,6 +138,14 @@ window inflates plain `std()` enough to hide itself from a `>5σ` threshold test
 median absolute deviation (rescaled by 1.4826 to a normal-consistent sigma) instead, which
 stays robust to the very outlier it's trying to detect.
 
+**Ensemble alpha is grid-searched, not fixed.** `P = α·P_LSTM + (1-α)·P_XGB`, with α swept
+over `[0.0, 0.1, ..., 1.0]` against the validation split per horizon (Phase 6) — the blend is
+never forced to include both models if one is genuinely better; α=0 or α=1 are valid outcomes.
+Because XGBoost predicts every row but the LSTM only predicts from row
+`sequence_length - 1` onward, the two prediction arrays (and the ground truth) are sliced to
+the same overlapping range before blending — a shape mismatch here would silently pair up the
+wrong timesteps.
+
 ---
 
 ## Data Sources
@@ -172,6 +183,7 @@ seasaw/
 ├── run_phase3_features.py
 ├── run_phase4_dataset_builder.py
 ├── run_phase5_training.py
+├── run_phase6_ensemble.py
 ├── data/
 │   ├── raw/{goes,wind_mfi,wind_swe,grasp}/    ← place downloaded files here
 │   ├── processed/                              ← pipeline outputs (gitignored, regenerated)
@@ -181,7 +193,7 @@ seasaw/
 │   │                       data_pipeline, auto_fetcher (automated NASA/NOAA download)
 │   ├── preprocessing/      Phase 2 — preprocessor.py
 │   ├── features/           Phase 3 — feature_engineer.py
-│   └── models/             Phase 5 — xgb_trainer.py, lstm_trainer.py
+│   └── models/             Phases 5 & 6 — xgb_trainer.py, lstm_trainer.py, ensemble.py
 └── models/                 saved model artifacts (.pkl, .h5) — gitignored, regenerated
 ```
 

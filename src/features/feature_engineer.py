@@ -7,7 +7,8 @@ model-ready feature set:
 
   1. Dynamic Lag  (signature innovation - see CLAUDE.md Flag 2)
   2. Lag features on the target
-  3. Rolling statistics on the target
+  3. Rolling statistics on the target (mean, std, max, min)
+  3b. Exponential Moving Average (EMA) on the target
   4. Delta features
   5. Drop rows with NaN created by the above (edge effects of shifts/windows)
 
@@ -138,7 +139,25 @@ class SeaSawFeatureEngineer:
             rolling = df[TARGET_LOG_COL].rolling(window)
             df[f"log_flux_roll_mean_{window}"] = rolling.mean()
             df[f"log_flux_roll_std_{window}"] = rolling.std()
-        logger.info(f"Step 3 - added rolling mean/std for windows {self.rolling_windows}")
+            df[f"log_flux_roll_max_{window}"] = rolling.max()
+            df[f"log_flux_roll_min_{window}"] = rolling.min()
+        logger.info(f"Step 3 - added rolling mean/std/max/min for windows {self.rolling_windows}")
+        return df
+
+    # ------------------------------------------------------------------
+    # Step 3b - Exponential Moving Average
+    # ------------------------------------------------------------------
+
+    def add_ema_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        EMA_t = alpha * x_t + (1 - alpha) * EMA_{t-1}, alpha = 2 / (span + 1).
+        adjust=False enforces this exact recursive form (pandas' default,
+        adjust=True, reweights early observations differently).
+        """
+        df = df.copy()
+        for span in self.rolling_windows:
+            df[f"log_flux_ema_{span}"] = df[TARGET_LOG_COL].ewm(span=span, adjust=False).mean()
+        logger.info(f"Step 3b - added EMA for spans {self.rolling_windows}")
         return df
 
     # ------------------------------------------------------------------
@@ -165,6 +184,7 @@ class SeaSawFeatureEngineer:
         df = self.apply_dynamic_lag(df)
         df = self.add_lag_features(df)
         df = self.add_rolling_stats(df)
+        df = self.add_ema_features(df)
         df = self.add_delta_features(df)
 
         before = len(df)
