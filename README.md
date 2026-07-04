@@ -1,4 +1,4 @@
-# SeaSaw — Space Environment Adaptive Solar Activity Warning
+# SeaSaw — Space Environment Adaptive Solar Activity Warning using MACHINE LEARNING
 
 AI/ML space weather forecasting system built for **ISRO Hackathon Problem Statement 14**.
 Predicts energetic electron radiation (**>2 MeV flux**) at Geostationary Earth Orbit (GEO) to
