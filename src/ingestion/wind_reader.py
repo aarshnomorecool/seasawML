@@ -55,7 +55,8 @@ _DENSITY_CANDIDATES = [
 
 def _auto_detect(cdf: cdflib.CDF, candidates: list, label: str) -> str:
     info = cdf.cdf_info()
-    all_vars = set(info.get("rVariables", []) + info.get("zVariables", []))
+    # cdflib >=1.0 returns cdf_info() as a CDFInfo dataclass, not a dict
+    all_vars = set(info.rVariables + info.zVariables)
     for c in candidates:
         if c in all_vars:
             return c

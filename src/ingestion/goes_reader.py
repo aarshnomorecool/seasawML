@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Candidate variable names to try in order if no explicit name is given
 _FLUX_CANDIDATES = [
+    "E2W_COR_FLUX", "E2E_COR_FLUX",  # GOES-13/15 EPEAD >2 MeV (CDAWeb, background/dead-time corrected)
     "e2_flux", "E2", "e2", "gt2mev", "mev2",
     "AvgDiffElectronFlux", "electron_flux", "Flux", "flux",
     "p8", "p9", "FLUX",
@@ -40,7 +41,8 @@ _EPOCH_CANDIDATES = [
 def _auto_detect(cdf: cdflib.CDF, candidates: list, label: str) -> str:
     """Return the first candidate variable that exists in the CDF."""
     info = cdf.cdf_info()
-    all_vars = set(info.get("rVariables", []) + info.get("zVariables", []))
+    # cdflib >=1.0 returns cdf_info() as a CDFInfo dataclass, not a dict
+    all_vars = set(info.rVariables + info.zVariables)
     for c in candidates:
         if c in all_vars:
             return c

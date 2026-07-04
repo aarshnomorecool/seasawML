@@ -33,7 +33,8 @@ def inspect_cdf(filepath: str) -> dict:
     print(f"  CDF File: {filepath}")
     print(f"{'=' * 70}")
 
-    all_vars = info.get("rVariables", []) + info.get("zVariables", [])
+    # cdflib >=1.0 returns cdf_info() as a CDFInfo dataclass, not a dict
+    all_vars = info.rVariables + info.zVariables
     print(f"\n  Total variables: {len(all_vars)}\n")
 
     results = {}
@@ -43,7 +44,7 @@ def inspect_cdf(filepath: str) -> dict:
             data = cdf.varget(var)
 
             if data is None:
-                print(f"  [{var}]  →  None")
+                print(f"  [{var}]  ->  None")
                 continue
 
             shape = data.shape if hasattr(data, "shape") else "(scalar)"
