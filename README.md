@@ -272,4 +272,5 @@ ingestion or model-saving code:
 - **`pandas` `TimedeltaIndex` has no `.abs()` method** (only `Series` does) - use `np.abs()` or
   the builtin `abs()` on a `TimedeltaIndex` instead.
 <img width="1910" height="653" alt="Screenshot 2026-07-05 165425" src="https://github.com/user-attachments/assets/596002db-9479-48bf-8368-5b79e8c4ee91" />
-<img width="1910" height="653" alt="Screenshot 2026-07-05 165425" src="https://github.com/user-attachments/assets/4b90422d-3c47-4631-8de8-c6beb9eb9d2d" />
+<img width="1919" height="905" alt="Screenshot 2026-07-05 165409" src="https://github.com/user-attachments/assets/08cd6d6d-f6f6-4eb5-bb26-baeb2caaf59d" />
+
