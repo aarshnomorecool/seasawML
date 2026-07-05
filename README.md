@@ -1,8 +1,8 @@
-# SeaSaw — Space Environment Adaptive Solar Activity Warning using MACHINE LEARNING
+# SeaSaw - Space Environment Adaptive Solar Activity Warning using MACHINE LEARNING
 
 AI/ML space weather forecasting system built for **ISRO Hackathon Problem Statement 14**.
 Predicts energetic electron radiation (**>2 MeV flux**) at Geostationary Earth Orbit (GEO) to
-protect ISRO satellites, at three forecast horizons: **30–45 min**, **6 hours**, and **12 hours**.
+protect ISRO satellites, at three forecast horizons: **30-45 min**, **6 hours**, and **12 hours**.
 
 ---
 
@@ -16,11 +16,14 @@ protect ISRO satellites, at three forecast horizons: **30–45 min**, **6 hours*
 | 4 | Multi-Horizon Dataset Builder (3 chronological train/val/test splits) | ✅ Complete |
 | 5 | Model Training (XGBoost + LSTM per horizon) | ✅ Complete |
 | 6 | Weighted Ensemble (α-blend of XGBoost + LSTM) | ✅ Complete |
-| 7 | Validation against GRASP (Indian-longitude ground truth) | ✅ Complete |
-| 8 | Streamlit Dashboard | ⬜ Not started |
+| 7 | Validation against GRASP (Indian-longitude ground truth) | ✅ Built, blocked on data |
+| 8 | Streamlit Dashboard | ✅ Complete |
 
-Phases 1–7 are implemented, tested against real downloaded data where possible, and ready to
-run on a full multi-year dataset. Phase 8 is next.
+Phases 1-6 and 8 are implemented and have been run end-to-end on one real month (March 2015)
+of GOES/Wind data pulled live from NASA CDAWeb, including full retraining and dashboard
+verification. Phase 7 is built and tested (synthetic data) but currently blocked on GRASP
+ground truth, which requires a manual download from ISRO's PRADAN portal (see Data Sources).
+Ready to scale to a full multi-year dataset.
 
 ---
 
@@ -51,7 +54,7 @@ GOES CDF  +  Wind CDF  +  GRASP ZIP
   Phase 7  Validation vs GRASP       run_phase7_validation.py
         │  → models/grasp_validation_metrics.json
         ▼
-  Phase 8  Streamlit Dashboard       (not yet built)
+  Phase 8  Streamlit Dashboard       streamlit run src/dashboard/app.py
 ```
 
 ---
@@ -76,7 +79,7 @@ Downloads Wind MFI, Wind SWE, and GOES-13/15/16 CDF files directly from NASA CDA
 See `TRAINING_GUIDE.md` for the full walkthrough, including 1-year smoke-test recommendations
 before committing to an 11-year fetch.
 
-**Manual (GRASP/GSAT — ISRO PRADAN):**
+**Manual (GRASP/GSAT - ISRO PRADAN):**
 Register at [pradan.issdc.gov.in](https://pradan.issdc.gov.in/), download ZIPs for
 Data → GSAT → date range, and place them (un-extracted) in `data/raw/grasp/`.
 
@@ -103,11 +106,21 @@ python run_phase5_training.py --xgb-only --horizon A
 python run_phase5_training.py --lstm-only --epochs 30 --sequence-length 288
 python run_phase6_ensemble.py --horizon A
 python run_phase7_validation.py --horizon A
+
+# Dashboard (reads whatever Phase 1-6/7 artifacts already exist):
+streamlit run src/dashboard/app.py
 ```
 
-XGBoost trains fine on a laptop CPU (~10–30 min for all three horizons). LSTM should be
-trained on a GPU — see `TRAINING_GUIDE.md` for free Colab/Kaggle options; the CPU path still
+XGBoost trains fine on a laptop CPU (~10-30 min for all three horizons). LSTM should be
+trained on a GPU - see `TRAINING_GUIDE.md` for free Colab/Kaggle options; the CPU path still
 works but is only practical for small smoke tests, not the full multi-year dataset.
+
+Storage note: `auto_fetcher.py` pulls Wind MFI at 1-minute cadence (`WI_H0_MFI`), not the raw
+3-second dataset - everything downstream resamples to 5-min anyway, and the 3-second files are
+~20x larger for zero accuracy gain (~500MB/month vs ~25MB/month). `run_phase1_ingestion.py
+--cleanup-raw` deletes the raw GOES/Wind CDF files after a successful ingestion run to save
+disk space further (off by default - you'd need them again to re-run Phase 1; GRASP ZIPs are
+never touched since they can't be re-downloaded automatically).
 
 ---
 
@@ -118,9 +131,9 @@ Every model sees `log10(flux + 1e-10)`, never raw flux. Predictions are inverse-
 back (`10**x`) before being reported.
 
 **Dynamic Lag (signature innovation).** Solar wind doesn't take a fixed time to travel from
-the Wind spacecraft (L1) to Earth — it depends on solar wind speed at that moment
+the Wind spacecraft (L1) to Earth - it depends on solar wind speed at that moment
 (`Δt = ΔX / Vsw`, `ΔX ≈ 1.5×10⁶ km`). Phase 3 computes this per-row and looks *backward* that
-many steps for the aligned Wind features — a first-order approximation (using the
+many steps for the aligned Wind features - a first-order approximation (using the
 contemporaneous, arrival-side speed rather than the true departure-side speed), chosen
 deliberately because it's a well-defined, gap-free, and deployable operation. An earlier
 forward-scatter design (shifting each Wind reading forward to its estimated arrival time) was
@@ -128,11 +141,11 @@ tried and rejected: variable per-row shifts aren't surjective, so it left scatte
 destination gaps and dropped ~60% of rows once combined with the later `dropna()`.
 
 **Direct single-output LSTM, one per horizon.** No recursive multi-step prediction, no
-seq2seq — each LSTM takes a fixed 288-step (24h) input window and predicts a single scalar
+seq2seq - each LSTM takes a fixed 288-step (24h) input window and predicts a single scalar
 (`log10(flux)`) at `t + horizon`. Recursive prediction was rejected because error compounds
 badly over a 6h/12h rollout.
 
-**Chronological splits everywhere.** Never random shuffle for time series — Phase 4's
+**Chronological splits everywhere.** Never random shuffle for time series - Phase 4's
 80/10/10 train/val/test split is a straight chronological cut, preserving temporal order so
 validation never leaks future information into training.
 
@@ -143,16 +156,16 @@ stays robust to the very outlier it's trying to detect.
 
 **Rolling window features cover mean/std/max/min + EMA.** Phase 3 computes rolling mean, std,
 max, and min of `log_electron_flux` over 6/12/24-step windows, plus an exponential moving
-average (`EMA_t = α·x_t + (1-α)·EMA_{t-1}`, `α = 2/(span+1)`) at the same spans — `adjust=False`
+average (`EMA_t = α·x_t + (1-α)·EMA_{t-1}`, `α = 2/(span+1)`) at the same spans - `adjust=False`
 is used so pandas computes the exact recursive formula rather than its alternate
 early-observation reweighting. Correlation features were considered but not added.
 
 **Ensemble alpha is grid-searched, not fixed.** `P = α·P_LSTM + (1-α)·P_XGB`, with α swept
-over `[0.0, 0.1, ..., 1.0]` against the validation split per horizon (Phase 6) — the blend is
+over `[0.0, 0.1, ..., 1.0]` against the validation split per horizon (Phase 6) - the blend is
 never forced to include both models if one is genuinely better; α=0 or α=1 are valid outcomes.
 Because XGBoost predicts every row but the LSTM only predicts from row
 `sequence_length - 1` onward, the two prediction arrays (and the ground truth) are sliced to
-the same overlapping range before blending — a shape mismatch here would silently pair up the
+the same overlapping range before blending - a shape mismatch here would silently pair up the
 wrong timesteps.
 
 **GRASP validation runs over the full feature history, not the Phase 4 test split.** GRASP's
@@ -160,7 +173,7 @@ wrong timesteps.
 GOES+Wind training period, so Phase 7 re-runs inference over every row of
 `training_features.csv`, labels each prediction with the real calendar timestamp it's actually
 a forecast *for* (row time + horizon), and matches those against GRASP's own timestamps via a
-tolerance-based nearest join (`pd.merge_asof`, ±2.5 min) rather than exact index equality —
+tolerance-based nearest join (`pd.merge_asof`, ±2.5 min) rather than exact index equality -
 GRASP's raw parsed timestamps aren't guaranteed to land on the same 5-min grid boundaries.
 Skill score against a persistence baseline (`1 - MSE_model / MSE_persistence`) is computed
 against that same matched GRASP ground truth, so model and persistence are scored on
@@ -177,16 +190,19 @@ identical rows.
 | Wind spacecraft SWE | CDF | Input: solar wind speed (km/s), plasma density (cm⁻³) |
 | GRASP/GSAT (ISRO) | ZIP → TXT + XML + PNG | Validation only, not used in training |
 
-**Verified CDAWeb dataset IDs** (confirmed live, not from docs — CDAWeb's own naming
+**Verified CDAWeb dataset IDs** (confirmed live, not from docs - CDAWeb's own naming
 conventions have drifted from what's commonly referenced):
-- Wind MFI: `WI_H2_MFI`, variable `BGSE`
-- Wind SWE: `WI_K0_SWE`, variables `Proton_V_nonlin`, `Proton_Np_nonlin`
+- Wind MFI: `WI_H0_MFI` (1-min cadence), variable `BGSE` - used instead of the 3-second
+  `WI_H2_MFI` dataset since everything downstream resamples to 5-min anyway
+- Wind SWE: `WI_K0_SWE`, variables `V_GSE` (velocity vector, magnitude computed downstream),
+  `Np` (density) - the commonly-referenced `Proton_V_nonlin`/`Proton_Np_nonlin` names do not
+  exist in this dataset
 - GOES-13 >2 MeV electrons: `GOES13_EPEAD-SCIENCE-ELECTRONS-E13EW_1MIN`, variable `E2W_COR_FLUX`
   (2010-05 to 2017-12)
 - GOES-15 >2 MeV electrons: `GOES15_EPEAD-SCIENCE-ELECTRONS-E13EW_1MIN`, variable `E2W_COR_FLUX`
   (2010-03 to 2020-03)
 
-Note: the GOES EPEAD >2 MeV corrected channel has a naturally high NaN rate — solar proton
+Note: the GOES EPEAD >2 MeV corrected channel has a naturally high NaN rate - solar proton
 contamination frequently invalidates it (`E2W_DQF` flag). That's expected data behavior, not
 a pipeline bug.
 
@@ -210,20 +226,21 @@ seasaw/
 │   ├── processed/                              ← pipeline outputs (gitignored, regenerated)
 │   └── validation/
 ├── src/
-│   ├── ingestion/          Phase 1 — cdf_inspector, goes_reader, wind_reader, grasp_reader,
+│   ├── ingestion/          Phase 1 - cdf_inspector, goes_reader, wind_reader, grasp_reader,
 │   │                       data_pipeline, auto_fetcher (automated NASA/NOAA download)
-│   ├── preprocessing/      Phase 2 — preprocessor.py
-│   ├── features/           Phase 3 — feature_engineer.py
-│   ├── models/             Phases 5 & 6 — xgb_trainer.py, lstm_trainer.py, ensemble.py
-│   └── validation/         Phase 7 — grasp_validator.py
-└── models/                 saved model artifacts (.pkl, .h5) — gitignored, regenerated
+│   ├── preprocessing/      Phase 2 - preprocessor.py
+│   ├── features/           Phase 3 - feature_engineer.py
+│   ├── models/             Phases 5 & 6 - xgb_trainer.py, lstm_trainer.py, ensemble.py
+│   ├── validation/         Phase 7 - grasp_validator.py
+│   └── dashboard/          Phase 8 - app.py (streamlit run src/dashboard/app.py)
+└── models/                 saved model artifacts (.pkl, .h5) - gitignored, regenerated
 ```
 
 ---
 
 ## Known Gotchas (found while building this)
 
-These were live, verified bugs fixed during development — worth knowing if you touch the
+These were live, verified bugs fixed during development - worth knowing if you touch the
 ingestion or model-saving code:
 
 - **`cdflib` >= 1.0 returns `cdf_info()` as a `CDFInfo` dataclass, not a dict.** Code written
@@ -237,10 +254,20 @@ ingestion or model-saving code:
   raises `Could not deserialize 'keras.metrics.mse'`. `LSTMTrainer.load()` works around this
   with `compile=False` (fine for `predict()`; pass `recompile=True` if you need `.evaluate()`
   or further training).
-- Several `→ ✓ —` unicode characters in log/print statements crashed or garbled on Windows'
-  cp1252 console encoding — replaced with ASCII equivalents throughout.
+- Several unicode arrow/checkmark/em-dash characters in log/print statements crashed or
+  garbled on Windows' cp1252 console encoding - replaced with ASCII equivalents throughout.
 - **`pd.merge_asof` requires both sides to share the same `datetime64` resolution.** In
   pandas >= 2, `date_range`, CSV `parse_dates`, and `Timedelta` arithmetic can each land on a
   different resolution (`ns` vs `us`), so joining GRASP timestamps against model prediction
   timestamps raised `MergeError: incompatible merge keys`. `grasp_validator.py` normalizes
   both indices to `ns` (`.as_unit("ns")`) before merging.
+- **A handful of real CDAWeb records decode to garbage timestamps** (observed: one Wind SWE
+  record each at `1998-05-31` and `2055-02-24`, in a file that should only span March 2015).
+  Uncaught, these silently pass through `cdflib`'s own fill-value handling and blow up the
+  next `pd.resample()` call into millions of rows spanning decades. An absolute
+  mission-lifetime bound alone isn't sufficient - `1998-05-31` is a real Wind-era date, just
+  the wrong file - so `goes_reader.py`/`wind_reader.py` also require each timestamp be within
+  60 days of that file's own median (each CDAWeb file covers one bounded fetch chunk; see
+  `auto_fetcher.fetch_dataset`).
+- **`pandas` `TimedeltaIndex` has no `.abs()` method** (only `Series` does) - use `np.abs()` or
+  the builtin `abs()` on a `TimedeltaIndex` instead.

@@ -241,7 +241,7 @@ class GRASPReader:
             logger.info(
                 f"  Contents: {len(txt_files)} TXT, "
                 f"{len(xml_files)} XML, {len(png_files)} PNG "
-                f"(PNG files skipped — visualization only)"
+                f"(PNG files skipped - visualization only)"
             )
 
             # ---- TXT -----------------------------------------------
@@ -324,6 +324,6 @@ class GRASPReader:
 
         logger.info(
             f"GRASP combined: {len(combined):,} records  |  "
-            f"{combined.index.min().date()} → {combined.index.max().date()}"
+            f"{combined.index.min().date()} -> {combined.index.max().date()}"
         )
         return combined

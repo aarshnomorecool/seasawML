@@ -37,6 +37,31 @@ _EPOCH_CANDIDATES = [
     "Epoch_0", "EPOCH", "time_tags",
 ]
 
+# See wind_reader._drop_corrupt_timestamps: a handful of records in real
+# CDAWeb files decode to garbage dates due to corrupted epoch values that
+# aren't caught by cdflib's own fill-value handling. Left unfiltered these
+# blow up any later pd.resample() call into millions of empty rows. An
+# absolute bound alone isn't enough since a corrupt record can still land on
+# a plausible-in-isolation date - so also require it be within
+# _MAX_DEVIATION_FROM_MEDIAN of the file's own median timestamp (each file
+# covers one bounded fetch chunk, see auto_fetcher.fetch_dataset).
+_MIN_VALID_TIMESTAMP = pd.Timestamp("1994-11-01")  # oldest GOES satellite in this pipeline
+_MAX_VALID_TIMESTAMP = pd.Timestamp.now() + pd.Timedelta(days=1)
+_MAX_DEVIATION_FROM_MEDIAN = pd.Timedelta(days=60)
+
+
+def _drop_corrupt_timestamps(df: pd.DataFrame, label: str) -> pd.DataFrame:
+    if df.empty:
+        return df
+    mask = (df.index >= _MIN_VALID_TIMESTAMP) & (df.index <= _MAX_VALID_TIMESTAMP)
+    median_ts = df.index[mask].to_series().median() if mask.any() else df.index.to_series().median()
+    mask &= np.abs(df.index - median_ts) <= _MAX_DEVIATION_FROM_MEDIAN
+    n_bad = (~mask).sum()
+    if n_bad:
+        logger.warning(f"  {label}: dropping {n_bad} record(s) with corrupt epoch/timestamp")
+        df = df.loc[mask]
+    return df
+
 
 def _auto_detect(cdf: cdflib.CDF, candidates: list, label: str) -> str:
     """Return the first candidate variable that exists in the CDF."""
@@ -114,11 +139,12 @@ class GOESReader:
         df.loc[df["electron_flux"] < -1e20, "electron_flux"] = np.nan
         df.loc[df["electron_flux"] <= 0, "electron_flux"] = np.nan
 
+        df = _drop_corrupt_timestamps(df, "GOES")
         df.sort_index(inplace=True)
 
         logger.info(
             f"  {len(df)} records  |  "
-            f"{df.index.min().date()} → {df.index.max().date()}"
+            f"{df.index.min().date()} -> {df.index.max().date()}"
         )
         return df
 
@@ -165,6 +191,6 @@ class GOESReader:
 
         logger.info(
             f"GOES combined: {len(combined):,} records  |  "
-            f"{combined.index.min().date()} → {combined.index.max().date()}"
+            f"{combined.index.min().date()} -> {combined.index.max().date()}"
         )
         return combined

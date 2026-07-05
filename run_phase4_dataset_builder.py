@@ -108,7 +108,7 @@ if __name__ == "__main__":
     feature_cols = [c for c in df.columns if c not in EXCLUDE_FROM_X]
 
     logger.info("=" * 60)
-    logger.info("  Phase 4 — Multi-Horizon Dataset Builder")
+    logger.info("  Phase 4 - Multi-Horizon Dataset Builder")
     logger.info("=" * 60)
     logger.info(f"Input rows: {len(df):,}")
     logger.info(f"Feature columns ({len(feature_cols)}): {feature_cols}")

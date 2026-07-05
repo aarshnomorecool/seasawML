@@ -98,8 +98,21 @@ class SeaSawDataPipeline:
         return self._swe_reader.read_directory(self.wind_swe_dir)
 
     def load_grasp(self) -> pd.DataFrame:
+        """
+        GRASP ZIPs require manual download from ISRO PRADAN (auth wall, not
+        automatable). If none are present yet, skip validation data rather
+        than failing the whole ingestion run — GRASP is validation-only
+        (Phase 7), not needed for training.
+        """
         logger.info(">>> Loading GRASP data")
-        return self._grasp_reader.read_zip_directory(self.grasp_dir)
+        try:
+            return self._grasp_reader.read_zip_directory(self.grasp_dir)
+        except (FileNotFoundError, ValueError) as e:
+            logger.warning(
+                f"No GRASP data available ({e}). Skipping validation dataset — "
+                f"place ZIPs in {self.grasp_dir} and re-run Phase 1 later to add it."
+            )
+            return pd.DataFrame(columns=["electron_flux"])
 
     # ------------------------------------------------------------------
     # Merge & Align
@@ -146,14 +159,14 @@ class SeaSawDataPipeline:
         logger.info(
             f"Training DataFrame: {len(merged):,} records  |  "
             f"cols: {list(merged.columns)}  |  "
-            f"{merged.index.min().date()} → {merged.index.max().date()}"
+            f"{merged.index.min().date()} -> {merged.index.max().date()}"
         )
 
         # Report NaN rates
         nan_rates = merged.isna().mean() * 100
         for col, rate in nan_rates.items():
             if rate > 0:
-                logger.info(f"  NaN rate — {col}: {rate:.1f}%")
+                logger.info(f"  NaN rate - {col}: {rate:.1f}%")
 
         return merged
 
@@ -184,7 +197,7 @@ class SeaSawDataPipeline:
         }
         """
         logger.info("=" * 60)
-        logger.info("  SeaSaw Data Pipeline — starting")
+        logger.info("  SeaSaw Data Pipeline - starting")
         logger.info("=" * 60)
 
         # Load
@@ -211,10 +224,13 @@ class SeaSawDataPipeline:
             out.mkdir(parents=True, exist_ok=True)
 
             training.to_csv(out / "training_raw.csv")
-            raw_grasp.to_csv(out / "grasp_validation.csv")
+            logger.info(f"  Saved -> {out}/training_raw.csv")
 
-            logger.info(f"  Saved → {out}/training_raw.csv")
-            logger.info(f"  Saved → {out}/grasp_validation.csv")
+            if raw_grasp.empty:
+                logger.info("  Skipped grasp_validation.csv (no GRASP data loaded)")
+            else:
+                raw_grasp.to_csv(out / "grasp_validation.csv")
+                logger.info(f"  Saved -> {out}/grasp_validation.csv")
 
         return {
             "training": training,

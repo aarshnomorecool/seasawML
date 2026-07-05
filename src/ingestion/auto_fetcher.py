@@ -44,16 +44,20 @@ logger = logging.getLogger(__name__)
 
 CDAWEB_DATASETS = {
     # Wind spacecraft — Magnetic Field Investigation (IMF)
+    # WI_H0_MFI (1-min cadence) is used instead of WI_H2_MFI (3-sec) because
+    # everything downstream resamples to 5-min anyway (see resample_freq in
+    # data_pipeline.py) — H2 buys no accuracy here but is ~20x the raw storage
+    # (500MB/month vs ~25MB/month), which matters over an 11-year fetch.
     "wind_mfi_1min": {
-        "dataset_id": "WI_H2_MFI",
+        "dataset_id": "WI_H0_MFI",
         "variables": ["BGSE"],          # 3-component [Bx, By, Bz] in GSE (nT)
         "description": "Wind MFI 1-min averaged IMF (1994–present)",
     },
     # Wind spacecraft — Solar Wind Experiment (plasma)
     "wind_swe": {
         "dataset_id": "WI_K0_SWE",
-        "variables": ["Proton_V_nonlin", "Proton_Np_nonlin"],
-        "description": "Wind SWE proton speed (km/s) and density (cm⁻³)",
+        "variables": ["V_GSE", "Np"],
+        "description": "Wind SWE proton velocity vector (km/s) and density (cm⁻³)",
     },
     # GOES-13 EPEAD >2 MeV electron flux (background/dead-time corrected)
     "goes13_epead": {

@@ -72,7 +72,7 @@ def inspect_cdf(filepath: str) -> dict:
             results[var] = {"shape": shape, "dtype": dtype, "sample": str(sample)}
 
         except Exception as e:
-            print(f"  [{var}]  →  ERROR: {e}\n")
+            print(f"  [{var}]  ->  ERROR: {e}\n")
 
     return results
 

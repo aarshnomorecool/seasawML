@@ -52,6 +52,34 @@ _DENSITY_CANDIDATES = [
     "proton_density", "N_p", "Np_moment",
 ]
 
+# Sanity bounds for decoded timestamps. A handful of records in real CDAWeb
+# files decode to garbage dates (observed: one Wind SWE record at 2055-02-24,
+# another at 1998-05-31 in a file that should only span March 2015) due to
+# corrupted epoch values that aren't caught by cdflib's own fill-value
+# handling. Left unfiltered, these blow up any later pd.resample() call into
+# millions of empty rows spanning decades. An absolute mission-lifetime bound
+# alone isn't enough (1998 is a real Wind date, just the wrong file) - each
+# CDAWeb file covers one bounded fetch chunk (typically a month, see
+# auto_fetcher.fetch_dataset), so anything far from *that file's own median*
+# timestamp is corrupt regardless of whether it also happens to be a
+# plausible date in isolation.
+_MIN_VALID_TIMESTAMP = pd.Timestamp("1994-11-01")  # Wind launch date
+_MAX_VALID_TIMESTAMP = pd.Timestamp.now() + pd.Timedelta(days=1)
+_MAX_DEVIATION_FROM_MEDIAN = pd.Timedelta(days=60)
+
+
+def _drop_corrupt_timestamps(df: pd.DataFrame, label: str) -> pd.DataFrame:
+    if df.empty:
+        return df
+    mask = (df.index >= _MIN_VALID_TIMESTAMP) & (df.index <= _MAX_VALID_TIMESTAMP)
+    median_ts = df.index[mask].to_series().median() if mask.any() else df.index.to_series().median()
+    mask &= np.abs(df.index - median_ts) <= _MAX_DEVIATION_FROM_MEDIAN
+    n_bad = (~mask).sum()
+    if n_bad:
+        logger.warning(f"  {label}: dropping {n_bad} record(s) with corrupt epoch/timestamp")
+        df = df.loc[mask]
+    return df
+
 
 def _auto_detect(cdf: cdflib.CDF, candidates: list, label: str) -> str:
     info = cdf.cdf_info()
@@ -128,10 +156,11 @@ class WindMFIReader:
         for col in ["Bx", "By", "Bz"]:
             df.loc[df[col].abs() > 1e20, col] = np.nan
 
+        df = _drop_corrupt_timestamps(df, "Wind MFI")
         df.sort_index(inplace=True)
         logger.info(
             f"  {len(df)} records  |  "
-            f"{df.index.min().date()} → {df.index.max().date()}"
+            f"{df.index.min().date()} -> {df.index.max().date()}"
         )
         return df
 
@@ -225,10 +254,11 @@ class WindSWEReader:
         df.loc[df["solar_wind_speed"] <= 0, "solar_wind_speed"] = np.nan
         df.loc[df["plasma_density"] <= 0, "plasma_density"] = np.nan
 
+        df = _drop_corrupt_timestamps(df, "Wind SWE")
         df.sort_index(inplace=True)
         logger.info(
             f"  {len(df)} records  |  "
-            f"{df.index.min().date()} → {df.index.max().date()}"
+            f"{df.index.min().date()} -> {df.index.max().date()}"
         )
         return df
 
