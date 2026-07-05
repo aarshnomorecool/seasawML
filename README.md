@@ -12,15 +12,15 @@ protect ISRO satellites, at three forecast horizons: **30–45 min**, **6 hours*
 |-------|--------------|--------|
 | 1 | Data Ingestion (GOES + Wind + GRASP) | ✅ Complete |
 | 2 | Preprocessing (spikes, gaps, log transform, scaling) | ✅ Complete |
-| 3 | Feature Engineering (Dynamic Lag, lag/rolling/delta features) | ✅ Complete |
+| 3 | Feature Engineering (Dynamic Lag, lag/rolling/EMA/delta features) | ✅ Complete |
 | 4 | Multi-Horizon Dataset Builder (3 chronological train/val/test splits) | ✅ Complete |
 | 5 | Model Training (XGBoost + LSTM per horizon) | ✅ Complete |
 | 6 | Weighted Ensemble (α-blend of XGBoost + LSTM) | ✅ Complete |
-| 7 | Validation against GRASP (Indian-longitude ground truth) | ⬜ Not started |
+| 7 | Validation against GRASP (Indian-longitude ground truth) | ✅ Complete |
 | 8 | Streamlit Dashboard | ⬜ Not started |
 
-Phases 1–6 are implemented, tested against real downloaded data where possible, and ready to
-run on a full multi-year dataset. Phases 7–8 are next.
+Phases 1–7 are implemented, tested against real downloaded data where possible, and ready to
+run on a full multi-year dataset. Phase 8 is next.
 
 ---
 
@@ -48,7 +48,8 @@ GOES CDF  +  Wind CDF  +  GRASP ZIP
   Phase 6  Weighted Ensemble         run_phase6_ensemble.py
         │  → models/ensemble_weights.json
         ▼
-  Phase 7  Validation vs GRASP       (not yet built)
+  Phase 7  Validation vs GRASP       run_phase7_validation.py
+        │  → models/grasp_validation_metrics.json
         ▼
   Phase 8  Streamlit Dashboard       (not yet built)
 ```
@@ -95,11 +96,13 @@ python run_phase3_features.py
 python run_phase4_dataset_builder.py
 python run_phase5_training.py                    # trains XGBoost + LSTM, all 3 horizons
 python run_phase6_ensemble.py                    # grid-searches alpha per horizon
+python run_phase7_validation.py                  # scores predictions against GRASP ground truth
 
 # Or run pieces individually while iterating:
 python run_phase5_training.py --xgb-only --horizon A
 python run_phase5_training.py --lstm-only --epochs 30 --sequence-length 288
 python run_phase6_ensemble.py --horizon A
+python run_phase7_validation.py --horizon A
 ```
 
 XGBoost trains fine on a laptop CPU (~10–30 min for all three horizons). LSTM should be
@@ -138,6 +141,12 @@ window inflates plain `std()` enough to hide itself from a `>5σ` threshold test
 median absolute deviation (rescaled by 1.4826 to a normal-consistent sigma) instead, which
 stays robust to the very outlier it's trying to detect.
 
+**Rolling window features cover mean/std/max/min + EMA.** Phase 3 computes rolling mean, std,
+max, and min of `log_electron_flux` over 6/12/24-step windows, plus an exponential moving
+average (`EMA_t = α·x_t + (1-α)·EMA_{t-1}`, `α = 2/(span+1)`) at the same spans — `adjust=False`
+is used so pandas computes the exact recursive formula rather than its alternate
+early-observation reweighting. Correlation features were considered but not added.
+
 **Ensemble alpha is grid-searched, not fixed.** `P = α·P_LSTM + (1-α)·P_XGB`, with α swept
 over `[0.0, 0.1, ..., 1.0]` against the validation split per horizon (Phase 6) — the blend is
 never forced to include both models if one is genuinely better; α=0 or α=1 are valid outcomes.
@@ -145,6 +154,17 @@ Because XGBoost predicts every row but the LSTM only predicts from row
 `sequence_length - 1` onward, the two prediction arrays (and the ground truth) are sliced to
 the same overlapping range before blending — a shape mismatch here would silently pair up the
 wrong timesteps.
+
+**GRASP validation runs over the full feature history, not the Phase 4 test split.** GRASP's
+1-2 year coverage window has no reason to overlap with the last 10% (chronologically) of the
+GOES+Wind training period, so Phase 7 re-runs inference over every row of
+`training_features.csv`, labels each prediction with the real calendar timestamp it's actually
+a forecast *for* (row time + horizon), and matches those against GRASP's own timestamps via a
+tolerance-based nearest join (`pd.merge_asof`, ±2.5 min) rather than exact index equality —
+GRASP's raw parsed timestamps aren't guaranteed to land on the same 5-min grid boundaries.
+Skill score against a persistence baseline (`1 - MSE_model / MSE_persistence`) is computed
+against that same matched GRASP ground truth, so model and persistence are scored on
+identical rows.
 
 ---
 
@@ -184,6 +204,7 @@ seasaw/
 ├── run_phase4_dataset_builder.py
 ├── run_phase5_training.py
 ├── run_phase6_ensemble.py
+├── run_phase7_validation.py
 ├── data/
 │   ├── raw/{goes,wind_mfi,wind_swe,grasp}/    ← place downloaded files here
 │   ├── processed/                              ← pipeline outputs (gitignored, regenerated)
@@ -193,7 +214,8 @@ seasaw/
 │   │                       data_pipeline, auto_fetcher (automated NASA/NOAA download)
 │   ├── preprocessing/      Phase 2 — preprocessor.py
 │   ├── features/           Phase 3 — feature_engineer.py
-│   └── models/             Phases 5 & 6 — xgb_trainer.py, lstm_trainer.py, ensemble.py
+│   ├── models/             Phases 5 & 6 — xgb_trainer.py, lstm_trainer.py, ensemble.py
+│   └── validation/         Phase 7 — grasp_validator.py
 └── models/                 saved model artifacts (.pkl, .h5) — gitignored, regenerated
 ```
 
@@ -217,3 +239,8 @@ ingestion or model-saving code:
   or further training).
 - Several `→ ✓ —` unicode characters in log/print statements crashed or garbled on Windows'
   cp1252 console encoding — replaced with ASCII equivalents throughout.
+- **`pd.merge_asof` requires both sides to share the same `datetime64` resolution.** In
+  pandas >= 2, `date_range`, CSV `parse_dates`, and `Timedelta` arithmetic can each land on a
+  different resolution (`ns` vs `us`), so joining GRASP timestamps against model prediction
+  timestamps raised `MergeError: incompatible merge keys`. `grasp_validator.py` normalizes
+  both indices to `ns` (`.as_unit("ns")`) before merging.
